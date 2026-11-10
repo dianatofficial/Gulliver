@@ -111,4 +111,3 @@ def test_cli_run_refuses_negative_max_rows_and_allows_zero(demo_db, state, capsy
     assert main(["--dsn", demo_db, "run", "--max-rows", "0", "--json", "select count(*) from users"]) == 0
     zero = json.loads(capsys.readouterr().out)
     assert zero["status"] == "ok" and zero["preview"] == [] and zero["actual"]["rows"] == 1
-

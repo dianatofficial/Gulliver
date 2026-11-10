@@ -206,4 +206,3 @@ def test_run_refuses_negative_max_rows_and_allows_zero(settings):
     over = core.run(settings, GOOD, max_rows=settings.budget.max_output_rows + 50)
     assert over["status"] == "ok"
     assert len(over["preview"]) <= settings.budget.max_output_rows
-
