@@ -97,3 +97,18 @@ def test_cli_translate_output_file(tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["warnings"]  # still printed
     assert out.read_text(encoding="utf-8") == data["sql"]
+
+
+def test_cli_run_refuses_negative_max_rows_and_allows_zero(demo_db, state, capsys):
+    assert main(["--dsn", demo_db, "run", "--max-rows", "-5", "--json", "select count(*) from users"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["status"] == "error" and "-5" in data["error"] and data["next_step"]
+
+    assert main(["--dsn", demo_db, "run", "--max-rows", "-2", "select count(*) from users"]) == 1
+    plain = json.loads(capsys.readouterr().out)
+    assert plain["status"] == "error" and "-2" in plain["error"]
+
+    assert main(["--dsn", demo_db, "run", "--max-rows", "0", "--json", "select count(*) from users"]) == 0
+    zero = json.loads(capsys.readouterr().out)
+    assert zero["status"] == "ok" and zero["preview"] == [] and zero["actual"]["rows"] == 1
+
