@@ -83,6 +83,43 @@ def test_impact_cli(models, capsys):
     assert "country_report" in capsys.readouterr().out
 
 
+def test_empty_models_folder_refused_by_impact_and_lineage(tmp_path, capsys):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    for fn in (lambda: features.impact("raw.users.id", str(empty)),
+               lambda: features.lineage_overview(str(empty))):
+        res = fn()
+        assert res["status"] == "error"
+        assert f"No .sql files found in models folder: {empty}" == res["error"]
+        assert "Check the path, or pass --manifest path/to/manifest.json for dbt." in res["next_step"]
+
+    assert main(["impact", "raw.users.id", "--models", str(empty)]) == 1
+    assert "No .sql files found in models folder" in capsys.readouterr().out
+    assert main(["lineage", "--models", str(empty)]) == 1
+    assert "No .sql files found in models folder" in capsys.readouterr().out
+
+
+def test_models_plus_manifest_with_only_one_having_models(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    manifest_file = tmp_path / "manifest.json"
+    manifest_file.write_text(
+        '{"nodes": {"model.pkg.m": {"resource_type": "model", "name": "m", "raw_code": "select 1 as id"}}}',
+        encoding="utf-8",
+    )
+
+    res = features.impact("m", models_dir=str(empty), manifest=str(manifest_file))
+    assert res["status"] == "ok"
+
+    empty_manifest = tmp_path / "empty_manifest.json"
+    empty_manifest.write_text('{"nodes": {}}', encoding="utf-8")
+    err = features.impact("m", models_dir=str(empty), manifest=str(empty_manifest))
+    assert err["status"] == "error"
+    assert "No .sql files found in models folder" in err["error"]
+
+
 # -- drift -------------------------------------------------------------------------------------------
 def test_drift_detects_removed_column_and_impact(tmp_path, state, models):
     db = tmp_path / "w.duckdb"
@@ -107,6 +144,31 @@ def test_drift_detects_removed_column_and_impact(tmp_path, state, models):
     saved = features.drift(s, save=True)
     assert saved["saved"] is True
     assert features.drift(s)["changes"] == []
+
+
+def test_empty_models_folder_refused_by_drift(tmp_path, state, capsys):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    db = tmp_path / "drift_empty.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute("create table t as select 1 as id")
+    con.close()
+    s = load_settings(dsn=str(db))
+
+    res = features.drift(s, models_dir=str(empty))
+    assert res["status"] == "error"
+    assert f"No .sql files found in models folder: {empty}" == res["error"]
+    assert "Check the path, or pass --manifest path/to/manifest.json for dbt." in res["next_step"]
+
+    snap = features.drift(s)
+    assert snap["status"] == "ok"
+
+    res_after = features.drift(s, models_dir=str(empty))
+    assert res_after["status"] == "error"
+    assert "No .sql files found in models folder" in res_after["error"]
+
+    assert main(["drift", "--models", str(empty), "--dsn", str(db)]) == 1
+    assert "No .sql files found in models folder" in capsys.readouterr().out
 
 
 # -- translate ---------------------------------------------------------------------------------------
@@ -374,3 +436,165 @@ def test_a_history_saved_under_the_old_none_key_is_still_read(settings):
 def test_check_cli_exit_code(demo_db, state):
     assert main(["--dsn", demo_db, "check", "events", "--unique", "user_id"]) == 4
     assert main(["--dsn", demo_db, "check", "events", "--unique", "event_id"]) == 0
+
+
+
+def test_check_configured_named_check(demo_db, tmp_path, monkeypatch):
+    from gulliver.config import load_settings
+
+    db_path = demo_db.replace("\\", "/")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "gulliver.toml").write_text(
+        f'''default_connection = "demo"
+[connections.demo]
+engine = "duckdb"
+path = '{db_path}'
+
+[checks.events_check]
+target = "events"
+unique = ["event_id"]
+not_null = ["user_id"]
+min_rows = 100
+'''
+    )
+    s = load_settings()
+    # 1. Run by configured name without flags
+    res = features.check(s, "events_check")
+    assert res["status"] == "ok"
+    assert res["name"] == "events_check"
+    assert res["target"] == "events"
+
+    # 2. Run with CLI flag overriding min_rows to an impossible number
+    res_override = features.check(s, "events_check", min_rows=10_000_000)
+    assert res_override["status"] == "fail"
+    failed_checks = [c["check"] for c in res_override["checks"] if not c["passed"]]
+    assert "row_count" in failed_checks
+
+
+def test_check_all_multiple_targets(demo_db, tmp_path, monkeypatch):
+    from gulliver.config import load_settings
+
+    db_path = demo_db.replace("\\", "/")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "gulliver.toml").write_text(
+        f'''default_connection = "demo"
+[connections.demo]
+engine = "duckdb"
+path = '{db_path}'
+
+[checks.ev]
+target = "events"
+unique = ["event_id"]
+min_rows = 1000
+
+[checks.usr]
+target = "users"
+unique = ["user_id"]
+min_rows = 100
+
+[checks.bad]
+target = "events"
+unique = ["user_id"]
+'''
+    )
+    s = load_settings()
+    all_res = features.check_all(s)
+    assert all_res["status"] == "fail"
+    assert all_res["total_targets"] == 3
+    assert all_res["failed_targets"] == 1
+    assert "1 failed of 3 target(s)" in all_res["next_step"]
+
+    statuses = {t["name"]: t["status"] for t in all_res["targets"]}
+    assert statuses == {"ev": "ok", "usr": "ok", "bad": "fail"}
+    # Receipts exist for every target
+    for t in all_res["targets"]:
+        assert t["receipt_id"] is not None
+
+
+def test_check_all_no_checks_error(settings):
+    res = features.check_all(settings)
+    assert res["status"] == "error"
+    assert "No checks configured" in res["error"]
+
+
+def test_check_unknown_name_error(settings):
+    res = features.check(settings, "nonexistent", name="nonexistent")
+    assert res["status"] == "error"
+    assert "Unknown configured check 'nonexistent'" in res["error"]
+
+
+def test_check_cli_all_and_args_validation(demo_db, tmp_path, monkeypatch, capsys):
+    from gulliver.cli import main
+
+    db_path = demo_db.replace("\\", "/")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "gulliver.toml").write_text(
+        f'''default_connection = "demo"
+[connections.demo]
+engine = "duckdb"
+path = '{db_path}'
+
+[checks.ev]
+target = "events"
+unique = ["event_id"]
+min_rows = 1000
+'''
+    )
+    # Passing --all with target is refused
+    with pytest.raises(SystemExit) as exc_info:
+        main(["check", "events", "--all"])
+    assert exc_info.value.code == 2
+    assert "do not pass a target when using --all" in capsys.readouterr().err
+
+    # Passing --all with check flags is refused
+    with pytest.raises(SystemExit) as exc_info:
+        main(["check", "--all", "--where", "1=0"])
+    assert exc_info.value.code == 2
+    assert "do not pass check flags" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["check", "--all", "--unique", "foo"])
+    assert exc_info.value.code == 2
+    assert "do not pass check flags" in capsys.readouterr().err
+
+    # check without target and without --all is refused
+    with pytest.raises(SystemExit) as exc_info:
+        main(["check"])
+    assert exc_info.value.code == 2
+    assert "provide a target table/query, a configured check name, or --all" in capsys.readouterr().err
+
+    # gulliver check --all succeeds and prints table
+    code = main(["check", "--all"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "check" in out and "target" in out and "status" in out
+    assert "ev" in out and "events" in out and "ok" in out
+
+
+def test_check_all_target_error_summary(demo_db, tmp_path, monkeypatch):
+    from gulliver.config import load_settings
+
+    db_path = demo_db.replace("\\", "/")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "gulliver.toml").write_text(
+        f'''default_connection = "demo"
+[connections.demo]
+engine = "duckdb"
+path = '{db_path}'
+
+[checks.good]
+target = "events"
+unique = ["event_id"]
+
+[checks.bad_col]
+target = "events"
+unique = ["nonexistent_col_123"]
+'''
+    )
+    s = load_settings()
+    all_res = features.check_all(s)
+    assert all_res["status"] == "error"
+    assert all_res["total_targets"] == 2
+    assert all_res["failed_targets"] == 0
+    assert all_res["errored_targets"] == 1
+    assert "1 errored, 0 failed of 2 target(s)" in all_res["next_step"]
