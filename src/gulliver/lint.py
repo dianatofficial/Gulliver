@@ -91,6 +91,8 @@ def _is_star_projection(node: exp.Expression) -> bool:
 
 
 def _join_condition(join: exp.Join) -> exp.Expression | None:
+    if (join.args.get("method") or "").upper() == "NATURAL":
+        return exp.true()
     return join.args.get("on") or (exp.true() if join.args.get("using") else None)
 
 
@@ -253,6 +255,8 @@ def lint(statement_tree: exp.Expression, dialect: str = "duckdb",
             if isinstance(target, (exp.Unnest, exp.Lateral)) or (
                 isinstance(target, exp.Table) and isinstance(target.this, exp.Unnest)
             ):
+                continue
+            if (join.args.get("method") or "").upper() == "NATURAL":
                 continue
             alias = (target.alias_or_name or "").lower()
             kind = (join.args.get("kind") or "").upper()

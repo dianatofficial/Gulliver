@@ -86,6 +86,21 @@ def test_unnest_join_is_not_cartesian():
     assert "GV003" not in r
 
 
+def test_natural_join_is_not_cartesian():
+    for sql in [
+        "select a from t natural join u limit 5",
+        "select a from t natural left join u limit 5",
+        "select a from t natural right join u limit 5",
+        "select a from t natural full join u limit 5",
+    ]:
+        assert "GV003" not in rules(sql)
+
+
+def test_plain_and_comma_joins_without_key_are_cartesian_errors():
+    assert rules("select a from t, u limit 5")["GV003"] == "error"
+    assert rules("select a from t join u limit 5")["GV003"] == "error"
+
+
 def test_non_equi_join():
     assert rules("select a.id from a join b on a.ts between b.start_ts and b.end_ts limit 5")["GV008"] == "warn"
 

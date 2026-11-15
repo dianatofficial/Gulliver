@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- Lint rule GV003 no longer reports `NATURAL JOIN` (including LEFT, RIGHT, and FULL variations) as a cartesian product error (#150).
 - `impact`, `lineage` and `drift` refuse `--models` pointing to a folder with no `.sql` files with `status: error` and a `next_step` instead of reporting zero models or empty impact. Thanks to @shaw778! (#122, #147)
 
 ## 0.4.0 - 2026-11-11
