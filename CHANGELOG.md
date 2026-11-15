@@ -4,6 +4,7 @@
 
 ### Fixed
 - `impact`, `lineage` and `drift` refuse `--models` pointing to a folder with no `.sql` files with `status: error` and a `next_step` instead of reporting zero models or empty impact. Thanks to @shaw778! (#122, #147)
+- `fix` refuses `--limit` values below 1 with `status: error` and a `next_step` before rebuilding SQL, instead of emitting negative `LIMIT` clauses or quietly falling back to the budget default (#118).
 
 ## 0.4.0 - 2026-11-11
 

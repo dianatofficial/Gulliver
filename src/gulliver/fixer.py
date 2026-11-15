@@ -468,8 +468,14 @@ def fix(settings: Any, sql: str, connection: str | None = None, dialect: str | N
     """Rewrite the SQL and, when a connection is available, estimate both versions (no data is read).
 
     verify=True also tests every change on generated edge-case data (see verify.py)."""
-    from .core import _engine, _fmt_bytes, _fmt_usd, _table_infos
+    from .core import _engine, _error, _fmt_bytes, _fmt_usd, _table_infos
     from .engines import EngineError, dialect_for
+
+    if limit is not None and limit < 1:
+        return _error(
+            f"--limit must be 1 or more, got {limit}",
+            "Pass a positive LIMIT, or omit --limit to use the budget default.",
+        )
 
     conn = None
     if settings is not None:

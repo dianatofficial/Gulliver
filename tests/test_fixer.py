@@ -324,3 +324,38 @@ def test_not_in_projecting_an_outer_column_is_left_alone():
     assert "GV012" not in [c["rule"] for c in out["changes"]]
     out = rewrite("select o.id from orders o where o.cid not in (select b.cid from blocked b)", "duckdb", mode="all")
     assert "GV012" in [c["rule"] for c in out["changes"]]
+
+
+def test_fix_limit_validation_refuses_non_positive_values(capsys):
+    # Python API: negative and zero limits return status error
+    res_neg = fix(None, "SELECT * FROM events", dialect="duckdb", mode="all", limit=-5)
+    assert res_neg["status"] == "error"
+    assert "--limit must be 1 or more, got -5" in res_neg["error"]
+    assert "Pass a positive LIMIT" in res_neg["next_step"]
+
+    res_zero = fix(None, "SELECT * FROM events", dialect="duckdb", mode="all", limit=0)
+    assert res_zero["status"] == "error"
+    assert "--limit must be 1 or more, got 0" in res_zero["error"]
+
+    # Safe mode also validates limit upfront
+    res_safe = fix(None, "SELECT * FROM events", dialect="duckdb", mode="safe", limit=-5)
+    assert res_safe["status"] == "error"
+    assert "--limit must be 1 or more, got -5" in res_safe["error"]
+
+    # Valid limit applies rewrite
+    res_valid = fix(None, "SELECT * FROM events", dialect="duckdb", mode="all", limit=10)
+    assert res_valid["status"] == "ok"
+    assert "LIMIT 10" in res_valid["fixed_sql"]
+
+    # CLI: main returns exit code 1 on non-positive limit
+    code_neg = main(["fix", "--dialect", "duckdb", "--mode", "all", "--limit", "-5", "--json", "SELECT * FROM events"])
+    assert code_neg == 1
+    data_neg = json.loads(capsys.readouterr().out)
+    assert data_neg["status"] == "error"
+    assert "--limit must be 1 or more, got -5" in data_neg["error"]
+
+    code_zero = main(["fix", "--dialect", "duckdb", "--mode", "all", "--limit", "0", "--json", "SELECT * FROM events"])
+    assert code_zero == 1
+    data_zero = json.loads(capsys.readouterr().out)
+    assert data_zero["status"] == "error"
+    assert "--limit must be 1 or more, got 0" in data_zero["error"]
