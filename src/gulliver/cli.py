@@ -13,6 +13,7 @@ from typing import Any
 
 from . import __version__, core
 from .config import ConfigError, load_settings
+from .engines import DIALECTS
 
 EXIT = {"ok": 0, "warn": 0, "skipped": 0, "error": 1, "block": 2, "needs_rehearsal": 3, "needs_approval": 3,
         "fail": 4}
@@ -211,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("lint", help="Scale lint only (no database needed): one SQL string, or files and folders")
     p.add_argument("sql", nargs="*", help="SQL text, '-' to read stdin, or .sql files and folders (CI mode)")
     p.add_argument("-f", "--file", help="Read one SQL statement from a file")
-    p.add_argument("--dialect", default=None, help="duckdb, postgres, bigquery or snowflake")
+    p.add_argument("--dialect", default=None, choices=sorted(DIALECTS), help="duckdb, postgres, bigquery or snowflake")
     p.add_argument("--format", choices=["text", "json", "sarif", "github", "gitlab", "junit", "markdown"], default=None,
                    help="Files mode output (default text; --json = json)")
     p.add_argument("--fail-on", choices=["error", "warn", "info", "never"], default=None,
@@ -236,7 +237,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-f", "--file", help="Read the SQL from a file")
     p.add_argument("--check", action="store_true", help="Files: exit 2 when a same-rows rewrite exists (CI)")
     p.add_argument("--write", action="store_true", help="Files: apply same-rows rewrites in place")
-    p.add_argument("--dialect", default=None, help="duckdb, postgres, bigquery or snowflake (default: connection's)")
+    p.add_argument("--dialect", default=None, choices=sorted(DIALECTS),
+                   help="duckdb, postgres, bigquery or snowflake (default: connection's)")
     p.add_argument("--mode", choices=["safe", "all"], default="safe",
                    help="safe: same rows only (default). all: also LIMIT, approx count, UNION ALL, NOT EXISTS")
     p.add_argument("--limit", type=int, default=None, help="Row limit to add in --mode all")
@@ -286,17 +288,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--overwrite", action="store_true", help="Replace PATH if it already exists")
     p.add_argument("--events", type=int, default=5_000_000, help="Number of generated events (default: 5000000)")
 
-    def models_args(p: argparse.ArgumentParser) -> None:
+    def models_args(p: argparse.ArgumentParser, dialect_choices: list[str] | None = None) -> None:
         p.add_argument("--models", help="Folder with SQL models (*.sql, dbt-style refs allowed)")
         p.add_argument("--manifest", help="dbt target/manifest.json")
-        p.add_argument("--dialect", default=None, help="duckdb, postgres, bigquery or snowflake")
+        p.add_argument("--dialect", default=None, choices=dialect_choices, help="duckdb, postgres, bigquery or snowflake")
 
     p = sub.add_parser("lineage", help="Model graph and column lineage of a folder of SQL models")
-    models_args(p)
+    models_args(p, sorted(DIALECTS))
 
     p = sub.add_parser("impact", help="What breaks downstream if a table or column changes")
     p.add_argument("target", help="table or table.column, e.g. raw.events.user_id")
-    models_args(p)
+    models_args(p, sorted(DIALECTS))
 
     sub.add_parser("snapshot", help="Save the connection's schema (tables, columns, rows) for drift checks")
 
@@ -374,7 +376,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=20, help="Query groups to list (default 20)")
     p.add_argument("--analyze", type=int, default=10, help="Top groups to lint, fix and price (default 10)")
     p.add_argument("--rank-by", choices=["auto", "cost", "runtime", "bytes", "calls"], default="auto")
-    p.add_argument("--dialect", default=None, help="Dialect of the SQL in a file (default: connection's)")
+    p.add_argument("--dialect", default=None, choices=sorted(DIALECTS),
+                   help="Dialect of the SQL in a file (default: connection's)")
     p.add_argument("-o", "--output", metavar="PATH", help="Write the report to PATH")
 
     from .review import add_arguments as review_arguments

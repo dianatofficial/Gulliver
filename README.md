@@ -849,6 +849,11 @@ gulliver tools --format mcp|openai|gemini [--toolset core|pipeline|all|NAMES]
 gulliver mcp [--http] [--host HOST] [--port N] [--toolset core|pipeline|all|NAMES]   start the MCP server
 ```
 
+On the CLI, `--dialect` for `lint`, `fix`, `lineage`, `impact` and `top` accepts only `duckdb`, `postgres`,
+`bigquery` or `snowflake`. Other values exit `2` and list the valid choices on stderr, even with `--json`.
+Without the flag, `lineage` and `impact` use `duckdb`; the other commands use their configured dialect or
+`duckdb`.
+
 Receipt-list filters combine. If nothing matches, the message names only the supplied filters, for example
 `No receipts match --action 'run', --connection 'warehouse'.` An empty unfiltered list still says
 `No receipts yet.` JSON output keeps `receipts: []` for either empty case.

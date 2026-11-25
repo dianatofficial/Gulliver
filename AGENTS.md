@@ -76,6 +76,11 @@ Do not run the same query again and again. If `gulliver_run` returns `block` wit
 - When asked what costs the most: `gulliver_top`. Offer only the `fixed_sql` it marks as the same rows, and say
   whether the saving is `exact` or `heuristic`.
 
+On the CLI, `--dialect` for `lint`, `fix`, `lineage`, `impact` and `top` accepts only `duckdb`, `postgres`,
+`bigquery` or `snowflake`. Other values exit `2` and list the valid choices on stderr, even with `--json`.
+Without the flag, `lineage` and `impact` use `duckdb`; the other commands use their configured dialect or
+`duckdb`.
+
 Syntax failures stay blocked. Read the line/column in `statement.reason`, fix the syntax or choose the
 correct `--dialect`, then retry. Tokenizer failures explicitly mark their location as end-of-input fallback.
 

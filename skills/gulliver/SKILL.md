@@ -84,6 +84,11 @@ and returns a counterexample when rows differ; a test is not a proof, so labels 
 | GV019 having-on-group-column | move the condition to `WHERE` so rows are filtered before they are grouped; no autofix |
 | GV020 null-comparison | use `IS NULL` / `IS NOT NULL`, or `IS NOT DISTINCT FROM` for NULL-safe equality; no autofix because results change |
 
+On the CLI, `--dialect` for `lint`, `fix`, `lineage`, `impact` and `top` accepts only `duckdb`, `postgres`,
+`bigquery` or `snowflake`. Other values exit `2` and list the valid choices on stderr, even with `--json`.
+Without the flag, `lineage` and `impact` use `duckdb`; the other commands use their configured dialect or
+`duckdb`.
+
 Syntax failures stay blocked. Read the line/column in `statement.reason`, fix the syntax or choose the
 correct `--dialect`, then retry. Tokenizer failures explicitly mark their location as end-of-input fallback.
 

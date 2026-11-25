@@ -39,6 +39,52 @@ def test_cli_exit_codes(demo_db, state, capsys):
     assert main(["--dsn", demo_db, "run", "delete from events"]) == 2
 
 
+@pytest.mark.parametrize("args", [
+    ["lint", "SELECT 1"],
+    ["fix", "SELECT 1"],
+    ["lineage"],
+    ["impact", "raw.users.id"],
+    ["top"],
+])
+@pytest.mark.parametrize("dialect", ["bogus", "oracle"])
+@pytest.mark.parametrize("json_args", [[], ["--json"]])
+def test_cli_refuses_unsupported_dialects(args, dialect, json_args, state, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([*json_args, *args, "--dialect", dialect])
+    assert exc.value.code == 2
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert f"argument --dialect: invalid choice: '{dialect}'" in out.err
+    assert "choose from bigquery, duckdb, postgres, snowflake" in out.err.replace("'", "")
+
+
+@pytest.mark.parametrize("command", ["lint", "fix", "lineage", "impact", "top"])
+@pytest.mark.parametrize("dialect", ["duckdb", "postgres", "bigquery", "snowflake", None])
+def test_cli_supported_and_default_dialects(command, dialect, state, tmp_path, capsys):
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "users.sql").write_text("SELECT id FROM raw.users", encoding="utf-8")
+    workload = tmp_path / "queries.jsonl"
+    workload.write_text(json.dumps({"query": "SELECT 1", "calls": 2}) + "\n", encoding="utf-8")
+    args = {
+        "lint": ["SELECT 1"],
+        "fix": ["SELECT 1"],
+        "lineage": ["--models", str(models)],
+        "impact": ["raw.users.id", "--models", str(models)],
+        "top": ["--file", str(workload)],
+    }[command]
+    if dialect is not None:
+        args += ["--dialect", dialect]
+    assert main([command, *args, "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] in ("ok", "warn")
+    assert result["next_step"]
+    if command in ("fix", "top"):
+        assert result["dialect"] == (dialect or "duckdb")
+    if command in ("lineage", "impact"):
+        assert result["errors"] == {}
+
+
 @pytest.mark.parametrize("limit", [-5, 0])
 def test_cli_invalid_limit_returns_a_clean_error(state, capsys, limit):
     assert main(["fix", "--mode", "all", "--dialect", "duckdb", "--limit", str(limit),
